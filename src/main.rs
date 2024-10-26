@@ -1,3 +1,4 @@
+use clap::ArgMatches;
 use clap::{App, Arg, SubCommand};
 use openapiv3::OpenAPI;
 use openapiv3::PathItem;
@@ -76,7 +77,14 @@ fn add_endpoint_for_method(
 
         let mut params = Vec::new();
 
+        println!("item {:?}", &path_item);
+        println!("parameters {:?}", &path_item.parameters);
+        println!("get {:?}", &path_item.get);
+        println!("post {:?}", &path_item.post);
+        println!("put {:?}", &path_item.put);
+        println!("delete {:?}", &path_item.delete);
         for param in &path_item.parameters {
+            println!("param {:?}", param);
             match param.as_item() {
                 Some(paramx) => {
                     match paramx {
@@ -86,6 +94,8 @@ fn add_endpoint_for_method(
                             style: _,
                             allow_empty_value: _,
                         } => {
+                            println!("Q param data {:?}", parameter_data);
+                            println!("Q paramx {:?}", paramx);
                             params.push(Parameter {
                                 name: parameter_data.name.clone(),
                                 location: ParameterLocation::Query,
@@ -101,6 +111,8 @@ fn add_endpoint_for_method(
                             parameter_data,
                             style: _,
                         } => {
+                            println!("Q param data {:?}", parameter_data);
+                            println!("Q paramx {:?}", paramx);
                             params.push(Parameter {
                                 name: parameter_data.name.clone(),
                                 location: ParameterLocation::Path,
@@ -172,10 +184,10 @@ fn build_cli(endpoints: &[Endpoint]) -> App {
     app
 }
 
-async fn execute_request(
+async fn execute_request<'a>(
     client: &Client,
     endpoint: &Endpoint,
-    matches: &clap::ArgMatches,
+    matches: &'a clap::ArgMatches<'a>,
     base_url: &str,
 ) -> Result<Value, Box<dyn Error>> {
     let mut url = format!("{}{}", base_url, endpoint.path);
@@ -232,19 +244,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let matches = app.get_matches();
 
     // Get base URL from spec
-    let base_url = spec
-        .servers
-        .and_then(|servers| servers.first())
-        .and_then(|server| Some(server.url.clone()))
-        .unwrap_or_else(|| "http://localhost:3000".to_string());
+    let base_url = match spec.servers.first() {
+        Some(server) => server.url.clone(),
+        _ => "http://localhost:3000".to_string(),
+    };
 
     // Create HTTP client
     let client = Client::new();
 
     // Execute the matching command
     for endpoint in &endpoints {
-        if let Some(matches) = matches.subcommand_matches(&endpoint.name) {
-            let result = execute_request(&client, endpoint, matches, &base_url).await?;
+        if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
+            let result = execute_request(&client, endpoint, cmd_matches, &base_url).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
             return Ok(());
         }

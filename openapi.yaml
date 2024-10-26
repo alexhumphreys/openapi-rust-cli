@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: A simple API for testing CLI client generation
 servers:
-  - url: http://localhost:3000
+  - url: http://localhost:9999
     description: JSON Server
 
 paths:
