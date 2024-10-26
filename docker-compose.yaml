@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  api:
+    image: codfish/json-server:0.17.3
+    ports:
+      - 9999:80
+    volumes:
+      - ./db.json:/app/db.json:delegated
