@@ -1,16 +1,14 @@
-use clap::ArgMatches;
-use clap::{App, Arg, SubCommand};
+use clap::{Arg, Command};
 use openapiv3::OpenAPI;
 use openapiv3::PathItem;
 use percent_encoding::percent_decode_str;
 use reqwest::Client;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use url::Url;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Endpoint {
     name: String,
     method: String,
@@ -18,7 +16,7 @@ struct Endpoint {
     params: Vec<Parameter>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Parameter {
     name: String,
     location: ParameterLocation,
@@ -26,7 +24,7 @@ struct Parameter {
     param_type: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ParameterLocation {
     Query,
     Body,
@@ -159,16 +157,16 @@ fn add_endpoint_for_method(
     }
 }
 
-fn build_cli(endpoints: &[Endpoint]) -> App {
-    let mut app = App::new("api-client")
+fn build_cli(endpoints: Vec<Endpoint>) -> Command {
+    let mut app = Command::new("api-client")
         .version("1.0")
         .author("Generated from OpenAPI spec");
 
     for endpoint in endpoints {
-        let mut cmd = SubCommand::with_name(&endpoint.name);
+        let mut cmd = Command::new(endpoint.name); // Use string slice directly
 
-        for param in &endpoint.params {
-            let mut arg = Arg::with_name(&param.name).long(&param.name);
+        for param in endpoint.params {
+            let mut arg = Arg::new(param.name.to_owned()); // Use string slice directly
 
             if param.required {
                 arg = arg.required(true);
@@ -187,10 +185,10 @@ fn build_cli(endpoints: &[Endpoint]) -> App {
     app
 }
 
-async fn execute_request<'a>(
+async fn execute_request(
     client: &Client,
-    endpoint: &Endpoint,
-    matches: &'a clap::ArgMatches<'a>,
+    endpoint: Endpoint,
+    matches: clap::ArgMatches,
     base_url: &str,
 ) -> Result<Value, Box<dyn Error>> {
     // Parse the base URL first
@@ -208,9 +206,9 @@ async fn execute_request<'a>(
 
     println!("matches {:?}", matches);
     // Process path parameters
-    for param in &endpoint.params {
+    for param in endpoint.params.clone() {
         println!("Looking for param: {} in matches", param.name);
-        if let Some(value) = matches.value_of(&param.name) {
+        if let Some(value) = matches.get_one::<String>(param.name.as_str()) {
             println!("Found value: {}", value);
             if matches!(param.location, ParameterLocation::Path) {
                 // First decode any percent-encoded characters in the path
@@ -236,8 +234,8 @@ async fn execute_request<'a>(
     // Process query and body parameters
     let mut body: Option<Value> = None;
 
-    for param in &endpoint.params {
-        if let Some(value) = matches.value_of(&param.name) {
+    for param in endpoint.params {
+        if let Some(value) = matches.get_one::<String>(param.name.as_str()) {
             match param.location {
                 ParameterLocation::Query => {
                     url.query_pairs_mut().append_pair(&param.name, value);
@@ -283,7 +281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let endpoints = extract_endpoints(&spec);
 
     // Build CLI
-    let app = build_cli(&endpoints);
+    let app = build_cli(endpoints.clone());
     let matches = app.get_matches();
 
     // Get base URL from spec
@@ -296,9 +294,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = Client::new();
 
     // Execute the matching command
-    for endpoint in &endpoints {
+    for endpoint in endpoints {
         if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
-            let result = execute_request(&client, endpoint, cmd_matches, &base_url).await?;
+            let result = execute_request(&client, endpoint, cmd_matches.clone(), &base_url).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
             return Ok(());
         }
