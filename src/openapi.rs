@@ -24,6 +24,7 @@ pub enum ParameterLocation {
     Query,
     Body,
     Path,
+    Header,
 }
 
 pub struct ParsedSpec {
@@ -83,9 +84,16 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                         });
                     }
                     openapiv3::Parameter::Header {
-                        parameter_data: _,
+                        parameter_data,
                         style: _,
-                    } => todo!(),
+                    } => {
+                        params.push(Parameter {
+                            name: parameter_data.name.clone(),
+                            location: ParameterLocation::Header,
+                            required: parameter_data.required,
+                            param_type: "string".to_string(), // Simplified type handling
+                        });
+                    }
                     openapiv3::Parameter::Path {
                         parameter_data,
                         style: _,

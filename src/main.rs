@@ -3,6 +3,7 @@ use clap::{Arg, Command};
 use openapiv3::OpenAPI;
 use openapiv3::PathItem;
 use percent_encoding::percent_decode_str;
+use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde_json::Value;
 use std::fs;
@@ -28,6 +29,7 @@ fn build_cli(endpoints: Vec<openapi::Endpoint>) -> Command {
                 openapi::ParameterLocation::Query => arg.long(param.name),
                 openapi::ParameterLocation::Body => arg.help("JSON string for request body"),
                 openapi::ParameterLocation::Path => arg,
+                openapi::ParameterLocation::Header => arg.long(param.name),
             };
 
             cmd = cmd.arg(arg);
@@ -90,6 +92,7 @@ async fn execute_request(
     // Process query and body parameters
     let mut body: Option<Value> = None;
 
+    let mut headers = HeaderMap::new();
     for param in endpoint.params {
         if let Some(value) = matches.get_one::<String>(param.name.as_str()) {
             match param.location {
@@ -98,6 +101,14 @@ async fn execute_request(
                 }
                 openapi::ParameterLocation::Body => {
                     body = Some(serde_json::from_str(value)?);
+                }
+                openapi::ParameterLocation::Header => {
+                    headers.insert(
+                        reqwest::header::HeaderName::from_bytes(
+                            param.name.to_uppercase().as_bytes(),
+                        )?,
+                        reqwest::header::HeaderValue::from_str(value)?,
+                    );
                 }
                 openapi::ParameterLocation::Path => {
                     // Already handled above
@@ -119,6 +130,8 @@ async fn execute_request(
             })
         }
     };
+
+    request = request.header("foo", "bar");
 
     // Add the body if it exists
     if let Some(body_value) = body {
