@@ -7,10 +7,25 @@ use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde_json::Value;
 use std::fs;
+use tracing::{debug, error, info, warn, Instrument, Level};
+use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
 use url::Url;
 
 mod errors;
 mod openapi;
+
+fn setup_logging() {
+    let subscriber = tracing_subscriber::fmt()
+        .with_file(true)
+        .with_line_number(true)
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(format!("{}", Level::WARN))),
+        )
+        .compact();
+
+    subscriber.init();
+}
 
 fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
     let mut app = Command::new("api-client")
@@ -61,12 +76,9 @@ async fn execute_request(
         format!("{}/{}", base_path.trim_end_matches('/'), endpoint.path)
     };
 
-    println!("matches {:?}", matches);
     // Process path parameters
     for param in endpoint.params.clone() {
-        println!("Looking for param: {} in matches", param.name);
         if let Some(value) = matches.get_one::<String>(param.name.as_str()) {
-            println!("Found value: {}", value);
             if matches!(param.location, openapi::ParameterLocation::Path) {
                 // First decode any percent-encoded characters in the path
                 let decoded_path = percent_decode_str(&final_path)
@@ -76,7 +88,6 @@ async fn execute_request(
                 final_path = decoded_path.replace(&format!("{{{}}}", param.name), value);
             }
         } else {
-            println!("No value found for: {}", param.name);
             // If the parameter is required, we should return an error
             if param.required {
                 return Err(Errors::MissingRequiredParameterError {
@@ -88,7 +99,6 @@ async fn execute_request(
 
     // Set the processed path
     url.set_path(&final_path);
-    println!("final path {:?}", &final_path);
 
     // Process query and body parameters
     let mut body: Option<Value> = None;
@@ -148,9 +158,7 @@ async fn execute_request(
 
 #[tokio::main]
 async fn main() -> miette::Result<(), Errors> {
-    //let spec = parse_spec("openapi.yaml")?;
-
-    //let endpoints = extract_endpoints(&spec);
+    setup_logging();
 
     // Parse OpenAPI spec
     // Extract endpoints
@@ -173,7 +181,6 @@ async fn main() -> miette::Result<(), Errors> {
     for endpoint in parsed_openapi.endpoints {
         if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
             let result = execute_request(&client, endpoint, cmd_matches.clone(), &base_url).await?;
-            println!("{}", serde_json::to_string_pretty(&result)?);
             return Ok(());
         }
     }

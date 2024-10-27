@@ -39,6 +39,8 @@ fn parse_spec(spec_path: &str) -> miette::Result<OpenAPI, Errors> {
 }
 
 pub fn parse_endpoints(spec_path: &str) -> miette::Result<ParsedSpec, Errors> {
+    tracing::debug!("parsing endpoints for {}", spec_path);
+
     let spec = parse_spec(spec_path)?;
     let endpoints = extract_endpoints(&spec);
     Ok(ParsedSpec { spec, endpoints })
@@ -59,13 +61,14 @@ fn extract_endpoints(spec: &OpenAPI) -> Vec<Endpoint> {
         }
     }
 
+    tracing::debug!("{} endpoints found", endpoints.len());
     endpoints
 }
 
 fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<Parameter> {
+    tracing::debug!("parsing {} params", ps.len());
     let mut params = Vec::new();
     for param in ps {
-        println!("HERE1 {:?}", param);
         match param.as_item() {
             Some(paramx) => {
                 match paramx {
@@ -75,7 +78,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                         style: _,
                         allow_empty_value: _,
                     } => {
-                        println!("2 Query param data {:?}", parameter_data);
+                        tracing::trace!("Adding query param {:?}", parameter_data.name);
                         params.push(Parameter {
                             name: parameter_data.name.clone(),
                             location: ParameterLocation::Query,
@@ -87,6 +90,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                         parameter_data,
                         style: _,
                     } => {
+                        tracing::trace!("Adding header param {:?}", parameter_data.name);
                         params.push(Parameter {
                             name: parameter_data.name.clone(),
                             location: ParameterLocation::Header,
@@ -98,7 +102,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                         parameter_data,
                         style: _,
                     } => {
-                        println!("3 Path param data {:?}", parameter_data);
+                        tracing::trace!("Adding path param {:?}", parameter_data.name);
                         params.push(Parameter {
                             name: parameter_data.name.clone(),
                             location: ParameterLocation::Path,
@@ -117,7 +121,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
             }
         }
     }
-    println!("op {:?}", params);
+    tracing::debug!("added {:?} params", params.len());
     params
 }
 
@@ -127,6 +131,7 @@ fn add_endpoint_for_method(
     path_item: &PathItem,
     endpoints: &mut Vec<Endpoint>,
 ) {
+    tracing::debug!("adding {} endpoint for path {}", method, path);
     let operation = match method {
         "get" => path_item.get.as_ref(),
         "post" => path_item.post.as_ref(),
@@ -141,14 +146,13 @@ fn add_endpoint_for_method(
             .clone()
             .unwrap_or_else(|| format!("{}_{}", method, path.replace("/", "_")));
 
-        println!("op {:?}", &op.parameters);
-
         let mut parsed_params = parse_params(&op.parameters);
 
         // Handle request body if present
         if let Some(request_body) = &op.request_body {
             match request_body.clone().into_item() {
                 Some(rb) => {
+                    tracing::trace!("Adding body param");
                     parsed_params.push(Parameter {
                         name: "body".to_string(),
                         location: ParameterLocation::Body,
@@ -160,13 +164,12 @@ fn add_endpoint_for_method(
             }
         }
 
-        println!("final parsed params {:?}", parsed_params);
+        tracing::debug!("params for id {:?} and path {} parsed", name, path);
         endpoints.push(Endpoint {
             name,
             method: method.to_string(),
             path: path.to_string(),
             params: parsed_params,
         });
-        println!("endpoints {:?}", endpoints);
     }
 }
