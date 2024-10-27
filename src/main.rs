@@ -1,3 +1,4 @@
+use crate::errors::Errors;
 use clap::{Arg, Command};
 use openapiv3::OpenAPI;
 use openapiv3::PathItem;
@@ -7,6 +8,8 @@ use serde_json::Value;
 use std::error::Error;
 use std::fs;
 use url::Url;
+
+mod errors;
 
 #[derive(Debug, Clone)]
 struct Endpoint {
@@ -31,7 +34,7 @@ enum ParameterLocation {
     Path,
 }
 
-fn parse_spec(spec_path: &str) -> Result<OpenAPI, Box<dyn Error>> {
+fn parse_spec(spec_path: &str) -> miette::Result<OpenAPI, Errors> {
     let spec_content = fs::read_to_string(spec_path)?;
     let spec: OpenAPI = serde_yaml::from_str(&spec_content)?;
     Ok(spec)
@@ -190,7 +193,7 @@ async fn execute_request(
     endpoint: Endpoint,
     matches: clap::ArgMatches,
     base_url: &str,
-) -> Result<Value, Box<dyn Error>> {
+) -> miette::Result<Value, Errors> {
     // Parse the base URL first
     let mut url = Url::parse(base_url)?;
 
@@ -222,7 +225,9 @@ async fn execute_request(
             println!("No value found for: {}", param.name);
             // If the parameter is required, we should return an error
             if param.required {
-                return Err(format!("Required parameter '{}' not provided", param.name).into());
+                return Err(Errors::MissingRequiredParameterError {
+                    name: param.name.clone(),
+                });
             }
         }
     }
@@ -257,7 +262,11 @@ async fn execute_request(
         "post" => client.post(url),
         "put" => client.put(url),
         "delete" => client.delete(url),
-        method => return Err(format!("Unsupported HTTP method: {}", method).into()),
+        method => {
+            return Err(Errors::UnsupportedHttpMethodError {
+                method: method.to_string(),
+            })
+        }
     };
 
     // Add the body if it exists
@@ -273,7 +282,7 @@ async fn execute_request(
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> miette::Result<(), Errors> {
     // Parse OpenAPI spec
     let spec = parse_spec("openapi.yaml")?;
 
