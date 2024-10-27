@@ -12,11 +12,12 @@ use url::Url;
 mod errors;
 mod openapi;
 
-fn build_cli(endpoints: Vec<openapi::Endpoint>) -> Command {
+fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
     let mut app = Command::new("api-client")
         .version("1.0")
         .author("Generated from OpenAPI spec");
 
+    endpoints.sort_by_key(|e| e.name.clone());
     for endpoint in endpoints {
         let mut cmd = Command::new(endpoint.name); // Use string slice directly
 
