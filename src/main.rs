@@ -168,13 +168,13 @@ fn build_cli(endpoints: Vec<Endpoint>) -> Command {
         for param in endpoint.params {
             let mut arg = Arg::new(param.name.to_owned()); // Use string slice directly
 
-            if param.required {
-                arg = arg.required(true);
-            }
+            arg = arg.required(param.required);
 
-            if matches!(param.location, ParameterLocation::Body) {
-                arg = arg.help("JSON string for request body");
-            }
+            arg = match param.location {
+                ParameterLocation::Query => arg.long(param.name),
+                ParameterLocation::Body => arg.help("JSON string for request body"),
+                ParameterLocation::Path => arg,
+            };
 
             cmd = cmd.arg(arg);
         }
