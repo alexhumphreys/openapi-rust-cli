@@ -55,6 +55,58 @@ fn extract_endpoints(spec: &OpenAPI) -> Vec<Endpoint> {
     endpoints
 }
 
+fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<Parameter> {
+    let mut params = Vec::new();
+    for param in ps {
+        println!("HERE1 {:?}", param);
+        match param.as_item() {
+            Some(paramx) => {
+                match paramx {
+                    openapiv3::Parameter::Query {
+                        parameter_data,
+                        allow_reserved: _,
+                        style: _,
+                        allow_empty_value: _,
+                    } => {
+                        println!("2 Query param data {:?}", parameter_data);
+                        params.push(Parameter {
+                            name: parameter_data.name.clone(),
+                            location: ParameterLocation::Query,
+                            required: parameter_data.required,
+                            param_type: "string".to_string(), // Simplified type handling
+                        });
+                    }
+                    openapiv3::Parameter::Header {
+                        parameter_data: _,
+                        style: _,
+                    } => todo!(),
+                    openapiv3::Parameter::Path {
+                        parameter_data,
+                        style: _,
+                    } => {
+                        println!("3 Path param data {:?}", parameter_data);
+                        params.push(Parameter {
+                            name: parameter_data.name.clone(),
+                            location: ParameterLocation::Path,
+                            required: parameter_data.required,
+                            param_type: "string".to_string(), // Simplified type handling
+                        });
+                    }
+                    openapiv3::Parameter::Cookie {
+                        parameter_data: _,
+                        style: _,
+                    } => todo!(),
+                };
+            }
+            None => {
+                todo!()
+            }
+        }
+    }
+    println!("op {:?}", params);
+    params
+}
+
 fn add_endpoint_for_method(
     method: &str,
     path: &str,
@@ -75,68 +127,15 @@ fn add_endpoint_for_method(
             .clone()
             .unwrap_or_else(|| format!("{}_{}", method, path.replace("/", "_")));
 
-        let mut params = Vec::new();
+        println!("op {:?}", &op.parameters);
 
-        println!("item {:?}", &path_item);
-        println!("parameters {:?}", &path_item.parameters);
-        println!("get {:?}", &path_item.get);
-        println!("post {:?}", &path_item.post);
-        println!("put {:?}", &path_item.put);
-        println!("delete {:?}", &path_item.delete);
-        for param in &path_item.parameters {
-            println!("param {:?}", param);
-            match param.as_item() {
-                Some(paramx) => {
-                    match paramx {
-                        openapiv3::Parameter::Query {
-                            parameter_data,
-                            allow_reserved: _,
-                            style: _,
-                            allow_empty_value: _,
-                        } => {
-                            println!("Q param data {:?}", parameter_data);
-                            println!("Q paramx {:?}", paramx);
-                            params.push(Parameter {
-                                name: parameter_data.name.clone(),
-                                location: ParameterLocation::Query,
-                                required: parameter_data.required,
-                                param_type: "string".to_string(), // Simplified type handling
-                            });
-                        }
-                        openapiv3::Parameter::Header {
-                            parameter_data: _,
-                            style: _,
-                        } => todo!(),
-                        openapiv3::Parameter::Path {
-                            parameter_data,
-                            style: _,
-                        } => {
-                            println!("Q param data {:?}", parameter_data);
-                            println!("Q paramx {:?}", paramx);
-                            params.push(Parameter {
-                                name: parameter_data.name.clone(),
-                                location: ParameterLocation::Path,
-                                required: parameter_data.required,
-                                param_type: "string".to_string(), // Simplified type handling
-                            });
-                        }
-                        openapiv3::Parameter::Cookie {
-                            parameter_data: _,
-                            style: _,
-                        } => todo!(),
-                    }
-                }
-                None => {
-                    todo!()
-                }
-            }
-        }
+        let mut parsed_params = parse_params(&op.parameters);
 
         // Handle request body if present
         if let Some(request_body) = &op.request_body {
             match request_body.clone().into_item() {
                 Some(rb) => {
-                    params.push(Parameter {
+                    parsed_params.push(Parameter {
                         name: "body".to_string(),
                         location: ParameterLocation::Body,
                         required: rb.required,
@@ -147,12 +146,14 @@ fn add_endpoint_for_method(
             }
         }
 
+        println!("final parsed params {:?}", parsed_params);
         endpoints.push(Endpoint {
             name,
             method: method.to_string(),
             path: path.to_string(),
-            params,
+            params: parsed_params,
         });
+        println!("endpoints {:?}", endpoints);
     }
 }
 
