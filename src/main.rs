@@ -28,9 +28,9 @@ fn setup_logging() {
 }
 
 fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
-    let mut app = Command::new("api-client")
-        .version("1.0")
-        .author("Generated from OpenAPI spec");
+    let mut command = clap::command!();
+    // Register `complete` subcommand
+    command = clap_autocomplete::add_subcommand(command);
 
     endpoints.sort_by_key(|e| e.name.clone());
     for endpoint in endpoints {
@@ -51,10 +51,10 @@ fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
             cmd = cmd.arg(arg);
         }
 
-        app = app.subcommand(cmd);
+        command = command.subcommand(cmd);
     }
 
-    app
+    command
 }
 
 async fn execute_request(
@@ -166,22 +166,38 @@ async fn main() -> miette::Result<(), Errors> {
 
     // Build CLI
     let app = build_cli(parsed_openapi.endpoints.clone());
+    let app_copy = app.clone();
     let matches = app.get_matches();
 
-    // Get base URL from spec
-    let base_url = match parsed_openapi.spec.servers.first() {
-        Some(server) => server.url.clone(),
-        _ => "http://localhost:3000".to_string(),
-    };
+    info!("running command");
+    if let Some(result) = clap_autocomplete::test_subcommand(&matches, app_copy) {
+        if let Err(err) = result {
+            eprintln!("Insufficient permissions: {err}");
+            std::process::exit(1);
+        } else {
+            std::process::exit(0);
+        }
+    } else {
+        info!("running command");
+        // Continue with the application logic
 
-    // Create HTTP client
-    let client = Client::new();
+        // Get base URL from spec
+        let base_url = match parsed_openapi.spec.servers.first() {
+            Some(server) => server.url.clone(),
+            _ => "http://localhost:3000".to_string(),
+        };
 
-    // Execute the matching command
-    for endpoint in parsed_openapi.endpoints {
-        if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
-            let result = execute_request(&client, endpoint, cmd_matches.clone(), &base_url).await?;
-            return Ok(());
+        // Create HTTP client
+        let client = Client::new();
+
+        // Execute the matching command
+        for endpoint in parsed_openapi.endpoints {
+            if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
+                let result =
+                    execute_request(&client, endpoint, cmd_matches.clone(), &base_url).await?;
+                println!("{}", serde_json::to_string_pretty(&result)?);
+                return Ok(());
+            }
         }
     }
 
