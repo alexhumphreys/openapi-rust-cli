@@ -240,10 +240,12 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "openapiv3",
+ "percent-encoding",
  "reqwest",
  "serde_json",
  "serde_yaml",
  "tokio",
+ "url",
 ]
 
 [[package]]

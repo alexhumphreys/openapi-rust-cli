@@ -2,11 +2,13 @@ use clap::ArgMatches;
 use clap::{App, Arg, SubCommand};
 use openapiv3::OpenAPI;
 use openapiv3::PathItem;
+use percent_encoding::percent_decode_str;
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
+use url::Url;
 
 #[derive(Debug)]
 struct Endpoint {
@@ -191,44 +193,84 @@ async fn execute_request<'a>(
     matches: &'a clap::ArgMatches<'a>,
     base_url: &str,
 ) -> Result<Value, Box<dyn Error>> {
-    let mut url = format!("{}{}", base_url, endpoint.path);
-    let mut query_params = Vec::new();
+    // Parse the base URL first
+    let mut url = Url::parse(base_url)?;
+
+    // Get the current path from the base URL
+    let base_path = url.path().to_string();
+
+    // Combine base path with endpoint path and handle path parameters
+    let mut final_path = if endpoint.path.starts_with('/') {
+        endpoint.path.to_string()
+    } else {
+        format!("{}/{}", base_path.trim_end_matches('/'), endpoint.path)
+    };
+
+    println!("matches {:?}", matches);
+    // Process path parameters
+    for param in &endpoint.params {
+        println!("Looking for param: {} in matches", param.name);
+        if let Some(value) = matches.value_of(&param.name) {
+            println!("Found value: {}", value);
+            if matches!(param.location, ParameterLocation::Path) {
+                // First decode any percent-encoded characters in the path
+                let decoded_path = percent_decode_str(&final_path)
+                    .decode_utf8_lossy()
+                    .into_owned();
+                // Then do the replacement
+                final_path = decoded_path.replace(&format!("{{{}}}", param.name), value);
+            }
+        } else {
+            println!("No value found for: {}", param.name);
+            // If the parameter is required, we should return an error
+            if param.required {
+                return Err(format!("Required parameter '{}' not provided", param.name).into());
+            }
+        }
+    }
+
+    // Set the processed path
+    url.set_path(&final_path);
+    println!("final path {:?}", &final_path);
+
+    // Process query and body parameters
     let mut body: Option<Value> = None;
 
     for param in &endpoint.params {
         if let Some(value) = matches.value_of(&param.name) {
             match param.location {
                 ParameterLocation::Query => {
-                    query_params.push(format!("{}={}", param.name, value));
+                    url.query_pairs_mut().append_pair(&param.name, value);
                 }
                 ParameterLocation::Body => {
                     body = Some(serde_json::from_str(value)?);
                 }
                 ParameterLocation::Path => {
-                    url = url.replace(&format!("{{{}}}", param.name), value);
+                    // Already handled above
+                    continue;
                 }
             }
         }
     }
 
-    if !query_params.is_empty() {
-        url = format!("{}?{}", url, query_params.join("&"));
-    }
-
-    let mut request = match endpoint.method.as_str() {
-        "get" => client.get(&url),
-        "post" => client.post(&url),
-        "put" => client.put(&url),
-        "delete" => client.delete(&url),
-        _ => return Err("Unsupported method".into()),
+    // Build the request based on the HTTP method
+    let mut request = match endpoint.method.to_lowercase().as_str() {
+        "get" => client.get(url),
+        "post" => client.post(url),
+        "put" => client.put(url),
+        "delete" => client.delete(url),
+        method => return Err(format!("Unsupported HTTP method: {}", method).into()),
     };
 
+    // Add the body if it exists
     if let Some(body_value) = body {
         request = request.json(&body_value);
     }
 
+    // Send the request and parse the response
     let response = request.send().await?;
     let result = response.json().await?;
+
     Ok(result)
 }
 
