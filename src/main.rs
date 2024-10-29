@@ -1,14 +1,11 @@
 use crate::errors::Errors;
 use clap::{Arg, Command};
-use openapiv3::OpenAPI;
-use openapiv3::PathItem;
 use percent_encoding::percent_decode_str;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde_json::Value;
-use std::fs;
-use tracing::{debug, error, info, warn, Instrument, Level};
-use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
+use tracing::{error, info, warn, Level};
+use tracing_subscriber::EnvFilter;
 use url::Url;
 
 mod errors;
@@ -16,6 +13,7 @@ mod openapi;
 
 fn setup_logging() {
     let subscriber = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_file(true)
         .with_line_number(true)
         .with_env_filter(
@@ -163,7 +161,7 @@ async fn execute_request(
         }
     };
 
-    request = request.header("foo", "bar");
+    request = request.headers(headers);
 
     // Add the body if it exists
     if let Some(body_value) = body {
@@ -193,7 +191,7 @@ fn get_config_path() -> Option<String> {
 
     match initial_cmd.try_get_matches() {
         Ok(matches) => matches.get_one::<String>("config").cloned(),
-        Err(e) => {
+        Err(_e) => {
             error!("here for some reason");
             Some("openapi.yaml".to_string())
         }
