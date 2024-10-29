@@ -28,13 +28,19 @@ fn setup_logging() {
 }
 
 fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
-    let mut command = clap::command!();
+    let mut command = clap::command!().arg(
+        Arg::new("config")
+            .short('c')
+            .long("config")
+            .required(true)
+            .help("Path to command configuration file"),
+    );
     // Register `complete` subcommand
     command = clap_autocomplete::add_subcommand(command);
 
     endpoints.sort_by_key(|e| e.name.clone());
     for endpoint in endpoints {
-        let mut cmd = Command::new(endpoint.name); // Use string slice directly
+        let mut cmd = Command::new(endpoint.name);
 
         for param in endpoint.params {
             let mut arg = Arg::new(param.name.to_owned()); // Use string slice directly
@@ -48,7 +54,7 @@ fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
                 openapi::ParameterLocation::Header => arg.long(param.name),
             };
 
-            cmd = cmd.arg(arg);
+            cmd = cmd.arg(arg)
         }
 
         command = command.subcommand(cmd);
@@ -129,6 +135,21 @@ async fn execute_request(
         }
     }
 
+    if let Ok(token) = std::env::var("AUTHORIZATION_BASIC_TOKEN") {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str(format!("Basic {}", token).as_str())?,
+        );
+    };
+
+    if let Ok(token) = std::env::var("AUTHORIZATION_BEARER_TOKEN") {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str(format!("Bearer {}", token).as_str())?,
+        );
+    };
+
+    warn!("final url {}", url.clone());
     // Build the request based on the HTTP method
     let mut request = match endpoint.method.to_lowercase().as_str() {
         "get" => client.get(url),
@@ -156,13 +177,38 @@ async fn execute_request(
     Ok(result)
 }
 
+fn get_config_path() -> Option<String> {
+    // First parse: Just get the config file path
+    let initial_cmd = Command::new("myapp")
+        .arg(
+            Arg::new("config")
+                .short('c')
+                .long("config")
+                .required(true)
+                .help("Path to openapi configuration file"),
+        )
+        .disable_help_flag(true)
+        .disable_help_subcommand(true)
+        .ignore_errors(true);
+
+    match initial_cmd.try_get_matches() {
+        Ok(matches) => matches.get_one::<String>("config").cloned(),
+        Err(e) => {
+            error!("here for some reason");
+            Some("openapi.yaml".to_string())
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> miette::Result<(), Errors> {
     setup_logging();
 
+    let path = get_config_path().unwrap_or("openapi.yaml".to_string());
+
     // Parse OpenAPI spec
     // Extract endpoints
-    let parsed_openapi = openapi::parse_endpoints("openapi.yaml")?;
+    let parsed_openapi = openapi::parse_endpoints(path.as_str())?;
 
     // Build CLI
     let app = build_cli(parsed_openapi.endpoints.clone());
@@ -186,6 +232,8 @@ async fn main() -> miette::Result<(), Errors> {
             Some(server) => server.url.clone(),
             _ => "http://localhost:3000".to_string(),
         };
+
+        warn!("base url {}", base_url);
 
         // Create HTTP client
         let client = Client::new();
