@@ -22,6 +22,7 @@ pub async fn execute_request(
     let base_path = url.path().to_string();
 
     // Combine base path with endpoint path and handle path parameters
+    // TODO change to use proper path functions
     let mut final_path = if endpoint.path.starts_with('/') {
         endpoint.path.to_string()
     } else {

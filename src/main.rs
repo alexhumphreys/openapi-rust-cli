@@ -7,6 +7,23 @@ mod errors;
 mod http;
 mod openapi;
 
+const DEFAULT_CONFIG: &str = "openapi.yaml";
+const DEFAULT_SERVER: &str = "http://localhost:3000";
+
+struct InitialConfig {
+    config: String,
+    server: Option<String>,
+}
+
+impl Default for InitialConfig {
+    fn default() -> Self {
+        InitialConfig {
+            config: DEFAULT_CONFIG.to_string(),
+            server: None,
+        }
+    }
+}
+
 fn setup_logging() {
     let subscriber = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -24,13 +41,22 @@ fn setup_logging() {
 fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
     let mut command = clap::command!();
 
-    command = command.arg_required_else_help(true).arg(
-        Arg::new("config")
-            .short('c')
-            .long("config")
-            .required(true)
-            .help("Path to openapi configuration file"),
-    );
+    command = command
+        .arg_required_else_help(true)
+        .arg(
+            Arg::new("config")
+                .short('c')
+                .long("config")
+                .required(true)
+                .help("Path to openapi configuration file"),
+        )
+        .arg(
+            Arg::new("server")
+                .short('s')
+                .long("server")
+                .required(false)
+                .help("override server from openapi config file"),
+        );
     // Register `complete` subcommand
     command = clap_autocomplete::add_subcommand(command);
 
@@ -59,26 +85,50 @@ fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
     command
 }
 
-fn get_config_path() -> Option<String> {
+fn get_initial_config() -> InitialConfig {
     // First parse: Just get the config file path
+
     let initial_cmd = Command::new("myapp")
         .arg(
             Arg::new("config")
                 .short('c')
                 .long("config")
                 .required(true)
+                .default_value(DEFAULT_CONFIG)
                 .help("Path to openapi configuration file"),
+        )
+        .arg(
+            Arg::new("server")
+                .short('s')
+                .long("server")
+                .required(false)
+                .help("override server from openapi config file"),
         )
         .disable_help_flag(true)
         .disable_help_subcommand(true)
         .ignore_errors(true);
 
     match initial_cmd.try_get_matches() {
-        Ok(matches) => matches.get_one::<String>("config").cloned(),
-        Err(_e) => {
-            error!("here for some reason");
-            Some("openapi.yaml".to_string())
+        Ok(matches) => {
+            let config = matches.get_one::<String>("config");
+            let server = matches.get_one::<String>("server");
+            match (config, server) {
+                (None, None) => InitialConfig::default(),
+                (None, Some(server)) => InitialConfig {
+                    config: DEFAULT_CONFIG.to_string(),
+                    server: Some(server.clone()),
+                },
+                (Some(config), None) => InitialConfig {
+                    config: config.clone(),
+                    server: None,
+                },
+                (Some(config), Some(server)) => InitialConfig {
+                    config: config.clone(),
+                    server: Some(server.clone()),
+                },
+            }
         }
+        Err(_) => InitialConfig::default(),
     }
 }
 
@@ -86,11 +136,11 @@ fn get_config_path() -> Option<String> {
 async fn main() -> miette::Result<(), Errors> {
     setup_logging();
 
-    let path = get_config_path().unwrap_or("openapi.yaml".to_string());
+    let initial_config = get_initial_config();
 
     // Parse OpenAPI spec
     // Extract endpoints
-    let parsed_openapi = openapi::parse_endpoints(path.as_str())?;
+    let parsed_openapi = openapi::parse_endpoints(initial_config.config.as_str())?;
 
     // Build CLI
     // TODO lots of bad clones here
@@ -102,7 +152,7 @@ async fn main() -> miette::Result<(), Errors> {
     info!("running command");
     if let Some(result) = clap_autocomplete::test_subcommand(&matches, app_copy) {
         if let Err(err) = result {
-            eprintln!("Insufficient permissions: {err}");
+            error!("Insufficient permissions: {err}");
             std::process::exit(1);
         } else {
             std::process::exit(0);
@@ -111,10 +161,15 @@ async fn main() -> miette::Result<(), Errors> {
         debug!("running command");
         // Continue with the application logic
 
-        // Get base URL from spec
-        let base_url = match parsed_openapi.spec.servers.first() {
-            Some(server) => server.url.clone(),
-            _ => "http://localhost:3000".to_string(),
+        // Choose correct base url
+        let first_server = parsed_openapi.spec.servers.first();
+        let base_url = match (first_server, initial_config.server) {
+            // when both, prefer server passed on command line
+            (Some(_), Some(server)) => server,
+            (Some(server), None) => server.url.clone(),
+            (None, Some(server)) => server,
+            // when neither, choose default
+            (None, None) => DEFAULT_SERVER.to_string(),
         };
 
         warn!("base url {}", base_url);
