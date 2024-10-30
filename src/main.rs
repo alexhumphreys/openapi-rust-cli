@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::errors::Errors;
 use clap::{Arg, Command};
 use tracing::{debug, error, info, warn, Level};
@@ -165,8 +167,14 @@ async fn main() -> miette::Result<(), Errors> {
         let first_server = parsed_openapi.spec.servers.first();
         let base_url = match (first_server, initial_config.server) {
             // when both, prefer server passed on command line
-            (Some(_), Some(server)) => server,
-            (Some(server), None) => server.url.clone(),
+            (Some(_), Some(server)) => {
+                debug!("choosing server from cli {}", server);
+                server
+            }
+            (Some(server), None) => {
+                debug!("choosing server from config {}", server.url.clone());
+                server.url.clone()
+            }
             (None, Some(server)) => server,
             // when neither, choose default
             (None, None) => DEFAULT_SERVER.to_string(),
@@ -181,7 +189,11 @@ async fn main() -> miette::Result<(), Errors> {
                 ran_command = true;
                 let result =
                     http::execute_request(endpoint, cmd_matches.clone(), &base_url).await?;
-                println!("{}", serde_json::to_string_pretty(&result)?);
+                writeln!(
+                    std::io::stdout(),
+                    "{}",
+                    serde_json::to_string_pretty(&result)?
+                )?;
                 return Ok(());
             }
         }
