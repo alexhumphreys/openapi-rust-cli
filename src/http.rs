@@ -1,4 +1,3 @@
-use miette::miette;
 use percent_encoding::percent_decode_str;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
