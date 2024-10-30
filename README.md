@@ -13,6 +13,15 @@ cargo run -- --config=openapi.yaml getUser 1            # use positional argumen
 cargo run -- --config=openapi.yaml getUsers --_limit=1   # use flags for query params
 ```
 
+## Auth
+
+Still not parsing auth stuff from openapi correctly, or using clap correctly, so until then you can use these environment variables to pass basic and bearer tokens:
+
+```
+export AUTHORIZATION_BASIC_TOKEN="Zm9vYmFyCg=="
+export AUTHORIZATION_BEARER_TOKEN="abc123"
+```
+
 ## How completion generation works
 1. First, generate the completion script. Add this to your Rust app:
 Replace `your_app_name` with your actual binary name
