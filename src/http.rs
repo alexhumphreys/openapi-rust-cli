@@ -2,19 +2,21 @@ use percent_encoding::percent_decode_str;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
 use serde_json::Value;
-use tracing::{error, info, warn, Level};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::{errors::Errors, openapi};
 
 pub async fn execute_request(
-    client: &Client,
     endpoint: openapi::Endpoint,
     matches: clap::ArgMatches,
     base_url: &str,
 ) -> miette::Result<Value, Errors> {
-    // Parse the base URL first
+    // Create HTTP client
+    let client = Client::new();
+
     let mut url = Url::parse(base_url)?;
+    debug!("base url {}", url);
 
     // Get the current path from the base URL
     let base_path = url.path().to_string();
@@ -26,7 +28,7 @@ pub async fn execute_request(
         format!("{}/{}", base_path.trim_end_matches('/'), endpoint.path)
     };
 
-    // Process path parameters
+    info!("Process path parameters");
     for param in endpoint.params.clone() {
         if let Some(value) = matches.get_one::<String>(param.name.as_str()) {
             if matches!(param.location, openapi::ParameterLocation::Path) {
@@ -101,9 +103,10 @@ pub async fn execute_request(
         "put" => client.put(url),
         "delete" => client.delete(url),
         method => {
+            error!("unsupported method {}", method.to_string());
             return Err(Errors::UnsupportedHttpMethodError {
                 method: method.to_string(),
-            })
+            });
         }
     };
 

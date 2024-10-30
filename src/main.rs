@@ -1,12 +1,7 @@
 use crate::errors::Errors;
 use clap::{Arg, Command};
-use percent_encoding::percent_decode_str;
-use reqwest::header::HeaderMap;
-use reqwest::Client;
-use serde_json::Value;
-use tracing::{error, info, warn, Level};
+use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::EnvFilter;
-use url::Url;
 
 mod errors;
 mod http;
@@ -27,12 +22,14 @@ fn setup_logging() {
 }
 
 fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
-    let mut command = clap::command!().arg(
+    let mut command = clap::command!();
+
+    command = command.arg_required_else_help(true).arg(
         Arg::new("config")
             .short('c')
             .long("config")
             .required(true)
-            .help("Path to command configuration file"),
+            .help("Path to openapi configuration file"),
     );
     // Register `complete` subcommand
     command = clap_autocomplete::add_subcommand(command);
@@ -96,8 +93,10 @@ async fn main() -> miette::Result<(), Errors> {
     let parsed_openapi = openapi::parse_endpoints(path.as_str())?;
 
     // Build CLI
+    // TODO lots of bad clones here
     let app = build_cli(parsed_openapi.endpoints.clone());
     let app_copy = app.clone();
+    let mut app_copy_copy = app.clone();
     let matches = app.get_matches();
 
     info!("running command");
@@ -109,7 +108,7 @@ async fn main() -> miette::Result<(), Errors> {
             std::process::exit(0);
         }
     } else {
-        info!("running command");
+        debug!("running command");
         // Continue with the application logic
 
         // Get base URL from spec
@@ -120,18 +119,20 @@ async fn main() -> miette::Result<(), Errors> {
 
         warn!("base url {}", base_url);
 
-        // Create HTTP client
-        let client = Client::new();
-
+        let mut ran_command = false;
         // Execute the matching command
         for endpoint in parsed_openapi.endpoints {
             if let Some(cmd_matches) = matches.subcommand_matches(&endpoint.name) {
+                ran_command = true;
                 let result =
-                    http::execute_request(&client, endpoint, cmd_matches.clone(), &base_url)
-                        .await?;
+                    http::execute_request(endpoint, cmd_matches.clone(), &base_url).await?;
                 println!("{}", serde_json::to_string_pretty(&result)?);
                 return Ok(());
             }
+        }
+
+        if ran_command == false {
+            app_copy_copy.print_help().unwrap();
         }
     }
 

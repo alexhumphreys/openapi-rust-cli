@@ -2,6 +2,17 @@
 
 generate a cli client for a given openapi spec
 
+## Try it out
+
+```
+docker-compose up                                       # start the test server
+cargo run -- --config=openapi.yaml -h                   # see available commands
+cargo run -- --config=openapi.yaml getUsers -h          # see arguments for a command
+cargo run -- --config=openapi.yaml getUsers             # use one of those commands to hit the server
+cargo run -- --config=openapi.yaml getUser 1            # use positional arguments for path params
+cargo run -- --config=openapi.yaml getUsers --_limit=1   # use flags for query params
+```
+
 ## How completion generation works
 1. First, generate the completion script. Add this to your Rust app:
 Replace `your_app_name` with your actual binary name
