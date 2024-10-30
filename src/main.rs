@@ -1,7 +1,6 @@
-use std::io::Write;
-
 use crate::errors::Errors;
 use clap::{Arg, Command};
+use std::io::Write;
 use tracing::{debug, error, info, warn, Level};
 use tracing_subscriber::EnvFilter;
 
@@ -66,10 +65,17 @@ fn build_cli(mut endpoints: Vec<openapi::Endpoint>) -> Command {
     for endpoint in endpoints {
         let mut cmd = Command::new(endpoint.name);
 
+        if let Some(summary) = endpoint.summary {
+            cmd = cmd.about(summary);
+        }
         for param in endpoint.params {
             let mut arg = Arg::new(param.name.to_owned()); // Use string slice directly
 
             arg = arg.required(param.required);
+
+            if let Some(description) = param.description {
+                arg = arg.help(description);
+            }
 
             arg = match param.location {
                 openapi::ParameterLocation::Query => arg.long(param.name),

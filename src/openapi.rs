@@ -8,6 +8,7 @@ pub struct Endpoint {
     pub name: String,
     pub method: String,
     pub path: String,
+    pub summary: Option<String>,
     pub params: Vec<Parameter>,
 }
 
@@ -17,6 +18,7 @@ pub struct Parameter {
     pub location: ParameterLocation,
     pub required: bool,
     pub param_type: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +86,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                             location: ParameterLocation::Query,
                             required: parameter_data.required,
                             param_type: "string".to_string(), // Simplified type handling
+                            description: parameter_data.description.clone(),
                         });
                     }
                     openapiv3::Parameter::Header {
@@ -96,6 +99,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                             location: ParameterLocation::Header,
                             required: parameter_data.required,
                             param_type: "string".to_string(), // Simplified type handling
+                            description: parameter_data.description.clone(),
                         });
                     }
                     openapiv3::Parameter::Path {
@@ -108,6 +112,7 @@ fn parse_params(ps: &Vec<openapiv3::ReferenceOr<openapiv3::Parameter>>) -> Vec<P
                             location: ParameterLocation::Path,
                             required: parameter_data.required,
                             param_type: "string".to_string(), // Simplified type handling
+                            description: parameter_data.description.clone(),
                         });
                     }
                     openapiv3::Parameter::Cookie {
@@ -145,6 +150,7 @@ fn add_endpoint_for_method(
             .operation_id
             .clone()
             .unwrap_or_else(|| format!("{}_{}", method, path.replace("/", "_")));
+        let summary = op.summary.clone();
 
         let mut parsed_params = parse_params(&op.parameters);
 
@@ -157,6 +163,7 @@ fn add_endpoint_for_method(
                         name: "body".to_string(),
                         location: ParameterLocation::Body,
                         required: rb.required,
+                        description: None,
                         param_type: "json".to_string(),
                     });
                 }
@@ -167,6 +174,7 @@ fn add_endpoint_for_method(
         tracing::debug!("params for id {:?} and path {} parsed", name, path);
         endpoints.push(Endpoint {
             name,
+            summary,
             method: method.to_string(),
             path: path.to_string(),
             params: parsed_params,
